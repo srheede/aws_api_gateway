@@ -1,0 +1,136 @@
+const AWS = require('aws-sdk');
+AWS.config.update({
+    region: 'eu-west-1'
+})
+const dynamodb = new AWS.DynamoDB.DocumentClient();
+const dynamodbTableName = 'exercises'
+
+exports.handler = async (event) => {
+    console.log(event);
+    console.log(event.requestContext.accountId);
+    let response;
+    switch (true) {
+        case event.resource === '/exercises' && event.httpMethod === 'GET':
+            response = getExercises();
+        break;
+        case event.resource === '/exercises/{exerciseId}' && event.httpMethod === 'GET':
+            response = getExerciseById(event.pathParameters.exerciseId);
+        break;
+        case event.resource === '/exercises/{exerciseId}' && event.httpMethod === 'PUT':
+            response = updateExerciseById(event);
+        break;
+        case event.resource === '/exercises/{exerciseId}' && event.httpMethod === 'DELETE':
+            response = deleteExerciseById(event.pathParameters.exerciseId);
+        break;
+        case event.resource === '/oauth2/token' && event.httpMethod === 'POST':
+            response = getBody(event);
+        break;
+        default:
+            response = buildResponse(400,'Invalid Request');
+    }
+    return response;
+};
+
+async function getExercises() {
+    const params = {
+        TableName: dynamodbTableName
+    }
+    const allExercises = await scanDynamoRecords(params, []);
+    const body = {
+        allExercises
+    }
+    return buildResponse(201, body);
+}
+
+async function scanDynamoRecords(scanParams, itemArray){
+    try {
+        const dynamoData = await dynamodb.scan(scanParams).promise();
+        itemArray = itemArray.concat(dynamoData.Items);
+        if (dynamoData.LastEvaluateKey){
+            scanParams.ExclusiveStartKey = dynamoData.LastEvaluateKey;
+            return await scanDynamoRecords(scanParams, itemArray);
+        }
+        return itemArray;
+    } catch(error){
+        console.error(error);
+    }
+}
+
+async function getExerciseById(exerciseId) {
+    const params = {
+        TableName: 'exercises',
+        Key: {
+            'exercise_id': exerciseId
+        }
+    }
+        return await dynamodb.get(params).promise().then((response) => {
+            return buildResponse('201', response.Item);
+        }, (error) => {
+                return buildResponse('404', error);
+        });
+}
+
+async function updateExerciseById(event){
+    const body = JSON.parse(event.body);
+    const params = {
+        TableName: 'exercises',
+        Key: {
+            'exercise_id': event.pathParameters.exerciseId
+        },
+        UpdateExpression: 'set description=:description',
+        ExpressionAttributeValues:{
+            ':description': body.description
+        },
+        ReturnValues: 'ALL_OLD'
+    }
+        return await dynamodb.update(params).promise().then((response) => {
+            const body = {
+                "exercise_id": event.pathParameters.exerciseId,
+                "status": "updated"
+            }
+            return buildResponse('201', body);
+        }, (error) => {
+                return buildResponse('404', error);
+        });
+}
+
+async function deleteExerciseById(exerciseId) {
+    const params = {
+        TableName: 'exercises',
+        Key: {
+            'exercise_id': exerciseId
+        },
+        ReturnValues: 'ALL_OLD'
+    }
+        return await dynamodb.delete(params).promise().then((response) => {
+            const body = {
+                "exercise_id": exerciseId,
+                "status": "deleted"
+            }
+            return buildResponse('201', body);
+        }, (error) => {
+                return buildResponse('404', error);
+        });
+}
+
+function getAccessToken(event){
+    var timestamp = new Date().toLocaleTimeString()
+    var datestamp = new Date().toDateString()
+    
+    const body = {
+            "access_token": 'generate_token(event)',
+            "status": "active",
+            "created_date": datestamp + ", " + timestamp
+    };
+    return buildResponse(201, body);
+}
+
+function buildResponse(statusCode, body) {
+    return {
+        statusCode: statusCode,
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+    }
+}

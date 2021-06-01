@@ -1,0 +1,28 @@
+{
+    "TableName": "exercises",
+    "Item": {
+        "exercise_id": {
+            "S": "$context.requestId"
+        },
+        "name": {
+            "S": "$input.path('$.name')"
+        },
+        "description": {
+            "S": "$input.path('$.description')"
+        },
+        "muscles_worked": {
+            "L": [
+                #set($muscles_worked=$input.path("$.muscles_worked"))
+                #foreach($elem in $muscles_worked)
+                {
+                    "S": "$elem"
+                }
+                #if($foreach.hasNext),#end
+                #end
+            ]
+        },
+        "difficulty": {
+            "S": "$input.path('$.difficulty')"
+        }
+    }
+}
